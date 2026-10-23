@@ -1,57 +1,23 @@
-```yaml
 name: Build VR Viewer IPA
 
-on:
+'on':
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
-    name: Compile VR Viewer
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Show Xcode version
+      - name: Check Xcode
         run: xcodebuild -version
 
-      - name: Find project and schemes
+      - name: Find project
         run: |
-          find . -name "*.xcodeproj" -print
-          xcodebuild -list -project "VR Viewer.xcodeproj"
+          find . -name '*.xcodeproj' -print
 
-      - name: Build application
+      - name: List schemes
         run: |
-          xcodebuild \
-            -project "VR Viewer.xcodeproj" \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Package IPA
-        run: |
-          APP_PATH="build/Build/Products/Release-iphoneos"
-          APP_FILE=$(find "$APP_PATH" -maxdepth 1 -name "*.app" -print -quit)
-
-          if [ -z "$APP_FILE" ]; then
-            echo "No .app file was generated."
-            exit 1
-          fi
-
-          mkdir -p Payload
-          cp -R "$APP_FILE" Payload/
-          zip -r VRViewer-unsigned.ipa Payload
-
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: VRViewer-unsigned-IPA
-          path: VRViewer-unsigned.ipa
-          if-no-files-found: error
-```
+          xcodebuild -list -project 'VR Viewer.xcodeproj'
