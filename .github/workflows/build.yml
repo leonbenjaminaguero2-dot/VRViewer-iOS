@@ -1,4 +1,3 @@
-```yaml
 name: Build VR Viewer IPA
 
 on:
@@ -9,23 +8,20 @@ permissions:
 
 jobs:
   build:
-    name: Compilar VR Viewer
+    name: Compile VR Viewer
     runs-on: macos-latest
 
     steps:
-      - name: Descargar proyecto
+      - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Seleccionar Xcode
-        run: |
-          xcodebuild -version
+      - name: Show Xcode version
+        run: xcodebuild -version
 
-      - name: Buscar proyecto y esquemas
-        run: |
-          find . -name "*.xcodeproj" -print
-          xcodebuild -list -project "2 VR Viewer.xcodeproj"
+      - name: List project schemes
+        run: xcodebuild -list -project "2 VR Viewer.xcodeproj"
 
-      - name: Compilar aplicación
+      - name: Build application
         run: |
           xcodebuild \
             -project "2 VR Viewer.xcodeproj" \
@@ -36,24 +32,25 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Crear IPA sin firma
+      - name: Package IPA
         run: |
-          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" -print -quit)
+          APP_PATH="build/Build/Products/Release-iphoneos"
 
-          if [ -z "$APP_PATH" ]; then
-            echo "No se encontró la aplicación compilada."
+          mkdir -p Payload
+
+          APP_FILE=$(find "$APP_PATH" -maxdepth 1 -name "*.app" -print -quit)
+
+          if [ -z "$APP_FILE" ]; then
+            echo "No .app file was generated."
             exit 1
           fi
 
-          mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
+          cp -R "$APP_FILE" Payload/
           zip -r VRViewer-unsigned.ipa Payload
 
-      - name: Guardar IPA
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: VRViewer-unsigned-IPA
           path: VRViewer-unsigned.ipa
           if-no-files-found: error
-          retention-days: 7
-```
