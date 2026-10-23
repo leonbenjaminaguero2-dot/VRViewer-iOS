@@ -1,3 +1,4 @@
+```yaml
 name: Build VR Viewer IPA
 
 on:
@@ -18,14 +19,15 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: List project schemes
-        run: xcodebuild -list -project "2 VR Viewer.xcodeproj"
+      - name: Find project and schemes
+        run: |
+          find . -name "*.xcodeproj" -print
+          xcodebuild -list -project "VR Viewer.xcodeproj"
 
       - name: Build application
         run: |
           xcodebuild \
-            -project "2 VR Viewer.xcodeproj" \
-            -scheme "2 VR Viewer" \
+            -project "VR Viewer.xcodeproj" \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
@@ -35,9 +37,6 @@ jobs:
       - name: Package IPA
         run: |
           APP_PATH="build/Build/Products/Release-iphoneos"
-
-          mkdir -p Payload
-
           APP_FILE=$(find "$APP_PATH" -maxdepth 1 -name "*.app" -print -quit)
 
           if [ -z "$APP_FILE" ]; then
@@ -45,6 +44,7 @@ jobs:
             exit 1
           fi
 
+          mkdir -p Payload
           cp -R "$APP_FILE" Payload/
           zip -r VRViewer-unsigned.ipa Payload
 
@@ -54,3 +54,4 @@ jobs:
           name: VRViewer-unsigned-IPA
           path: VRViewer-unsigned.ipa
           if-no-files-found: error
+```
