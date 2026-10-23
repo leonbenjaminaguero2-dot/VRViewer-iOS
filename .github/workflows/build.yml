@@ -1,23 +1,145 @@
-name: Build VR Viewer IPA
+name: VR Viewer - Build IPA
 
 'on':
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: macos-latest
+    name: Build iOS application
+    runs-on: macos-15
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Check Xcode
         run: xcodebuild -version
 
-      - name: Find project
+      - name: Find Xcode project
+        id: project
+        shell: bash
         run: |
-          find . -name '*.xcodeproj' -print
+          set -euo pipefail
 
-      - name: List schemes
+          PROJECT="$(find . -type d -name '*.xcodeproj' -not -path '*/.git/*' -print -quit)"
+          WORKSPACE="$(find . -type d -name '*.xcworkspace' -not -path '*/Pods/*' -not -path '*/.git/*' -print -quit)"
+
+          if [ -n "$WORKSPACE" ]; then
+            echo "kind=workspace" >> "$GITHUB_OUTPUT"
+            echo "path=$WORKSPACE" >> "$GITHUB_OUTPUT"
+            xcodebuild -list -workspace "$WORKSPACE"
+          elif [ -n "$PROJECT" ]; then
+            echo "kind=project" >> "$GITHUB_OUTPUT"
+            echo "path=$PROJECT" >> "$GITHUB_OUTPUT"
+            xcodebuild -list -project "$PROJECT"
+          else
+            echo "::error::No se encontró ningún proyecto Xcode."
+            exit 1
+          fi
+
+      - name: Detect scheme
+        id: scheme
+        shell: bash
+        env:
+          PROJECT_KIND: ${{ steps.project.outputs.kind }}
+          PROJECT_PATH: ${{ steps.project.outputs.path }}
         run: |
-          xcodebuild -list -project 'VR Viewer.xcodeproj'
+          set -euo pipefail
+
+          if [ "$PROJECT_KIND" = "workspace" ]; then
+            INFO="$(xcodebuild -list -json -workspace "$PROJECT_PATH")"
+          else
+            INFO="$(xcodebuild -list -json -project "$PROJECT_PATH")"
+          fi
+
+          printf '%s' "$INFO" > "$RUNNER_TEMP/project-info.json"
+
+          SCHEME="$(python3 -c '
+          import json, sys
+          data=json.load(open(sys.argv[1]))
+          item=next(iter(data.values()))
+          schemes=item.get("schemes", [])
+          print(schemes[0] if schemes else "")
+          ' "$RUNNER_TEMP/project-info.json")"
+
+          if [ -z "$SCHEME" ]; then
+            echo "::error::No se encontró un esquema de compilación. Puede ser necesario compartir un scheme en Xcode."
+            exit 1
+          fi
+
+          echo "name=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "Esquema detectado: $SCHEME"
+
+      - name: Build iOS app
+        shell: bash
+        env:
+          PROJECT_KIND: ${{ steps.project.outputs.kind }}
+          PROJECT_PATH: ${{ steps.project.outputs.path }}
+          SCHEME: ${{ steps.scheme.outputs.name }}
+        run: |
+          set -o pipefail
+
+          if [ "$PROJECT_KIND" = "workspace" ]; then
+            xcodebuild \
+              -workspace "$PROJECT_PATH" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath "$RUNNER_TEMP/VRViewerBuild" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              build 2>&1 | tee "$RUNNER_TEMP/build.log"
+          else
+            xcodebuild \
+              -project "$PROJECT_PATH" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath "$RUNNER_TEMP/VRViewerBuild" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              build 2>&1 | tee "$RUNNER_TEMP/build.log"
+          fi
+
+      - name: Package IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_DIR="$RUNNER_TEMP/VRViewerBuild/Build/Products/Release-iphoneos"
+          APP_PATH="$(find "$APP_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
+
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No se encontró el archivo .app compilado."
+            exit 1
+          fi
+
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload VRViewer-unsigned.ipa
+          ls -lh VRViewer-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: VRViewer-unsigned-IPA
+          path: VRViewer-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build log if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VRViewer-build-log
+          path: ${{ runner.temp }}/build.log
+          if-no-files-found: ignore
+          retention-days: 7
